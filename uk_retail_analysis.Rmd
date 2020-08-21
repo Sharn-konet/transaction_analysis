@@ -1,0 +1,121 @@
+---
+title: "Online Retail Analysis"
+author: "Sharn-konet Reitsma"
+output: html_notebook
+---
+```{r Load Libraries}
+library(tidyverse, quietly = TRUE)
+library(lubridate)
+```
+
+
+```{r Import Data}
+data <- read_csv("online_retail_II.csv")
+summary(data)
+```
+
+From the summary above, it seems like there are many missing customer ID's. We can also see that there is at least one negative price and quantity in the data, which is not immediately interpretable.
+
+## Investigate Abnormal Data
+
+```{r}
+head(filter(prev_month_data, Price <= 0))
+
+(filter(data, Price <= 0))
+```
+
+Investigating through the data it seems like most of the occurences where price is low is due to damages.
+
+```{r}
+(filter(data, Price < 0))
+```
+
+It seems like the data which is less than zero is simply there to adjust for bad debt. This seems largely unrelated to revenues, and due to the large numbers, they may influence any statistics we generate about the data.
+
+```{r}
+(filter(data, Quantity <= 0))
+```
+
+It seems like there are a large amount of quantities which are negative. From the context for the CSV, these are cancelled transactions indicated by the "C" in the invoice. If not removed, these cancelled transactions will count as revenue as they have a positive price associated with them. Further investigation shows that these invoice codes have no regular counter part (ie. no double-counting is occuring), we can just safely remove all of the cancelled invoice codes.
+
+There are also some observations in the quantities which are damaged or discoloured which are given negative quantities. These observations all have no price and no customer ID.
+
+## Clean Data
+
+From the above investigation, it's clear that some of the data needs to be removed before we can summarise and visualise the data.
+
+```{r Clean Data}
+
+# Remove the cancelled invoices
+cancelled_invoices <- data %>% filter(grepl("C", Invoice))
+cancelled_invoices <- cancelled_invoices$Invoice %>% unique()
+
+filtered_data <- data %>% filter(!(Invoice %in% cancelled_invoices))
+
+# Remove invoices with negative pricing
+filtered_data <- filtered_data %>% filter(Price > 0)
+
+```
+
+For removing columns with NAs in customer ID, I wanted to make sure that these occur in tandem. Executing the following code gave the same results, so meaning they're likely just errors and are safe to remove.
+
+```{r}
+# Both result in the same dataframe
+filtered_data <- filtered_data %>% filter(!is.na(`Customer ID`), !is.na(Description))
+
+filtered_data <- filtered_data %>% filter(!is.na(`Customer ID`) & !is.na(Description))
+```
+
+### Check summary of the data
+
+```{r}
+summary(filtered_data)
+```
+
+
+## Plotting the Data
+
+```{r Plotting Sales Volumes}
+filtered_data <- filtered_data %>% mutate(dow = weekdays(InvoiceDate))
+
+filtered_data$dow <- factor(filtered_data$dow, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ordered = TRUE)
+
+ggplot(data = filtered_data, aes(x = dow)) +
+  geom_bar(aes(weight = Quantity)) + 
+  labs(title = "Total Sale Volume by Day",
+       x = "Day of the Week",
+       y = "Quantity Sold")
+```
+
+There's an abnormally small number of sales on Saturdays. Because their customers are mostly wholesalers, there is likely a reduced number of customers toward the weekend which we can see in the Sunday total. It's likely that the abnormally low number of sales is due to the store being closed on Saturday, but should be confirmed.
+
+```{r Plotting Revenue Share}
+lastest_date <- filtered_data$InvoiceDate %>% unique() %>% .[order(., decreasing = TRUE)] %>% .[[2]]
+
+prev_month_data <- filtered_data %>% filter(year(InvoiceDate) == year(last_date),
+                                   month(InvoiceDate) == month(last_date - dmonths(1)))
+
+prev_month_data <- prev_month_data %>% mutate(revenue = Quantity * Price)
+
+prev_month_summ <- prev_month_data %>% group_by(`Customer ID`) %>% summarise(total_rev = sum(revenue)) %>% arrange(desc(total_rev))
+
+prev_month_data$`Customer ID` <- as.factor(prev_month_data$`Customer ID`)
+prev_month_data$StockCode <- as.factor(prev_month_data$StockCode)
+
+ggplot(data = prev_month_data, aes(x = StockCode, fill = `Customer ID`)) + 
+  geom_bar(aes(weight = Price)) + 
+  # facet_wrap(~`Customer ID`) + 
+  labs(title = "Last Month's Revenue by Product and Customer",
+       x = "Product",
+       y = "Total Revenue (£)",
+       legend = "Prodduct")
+```
+
+```{r Plot Average Monthly Sale Price by Volume}
+
+monthly_data <- filtered_data %>% mutate(month = months(InvoiceDate), year = year(InvoiceDate))
+
+monthly_summary <- monthly_data %>% group_by(month) %>% summarise(weighted_average = weighted.mean(Price, w = Quantity))
+
+```
+
