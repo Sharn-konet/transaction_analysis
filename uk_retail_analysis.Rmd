@@ -3,7 +3,7 @@ title: "Online Retail Analysis"
 author: "Sharn-konet Reitsma"
 output: html_notebook
 ---
-```{r Load Libraries}
+```{r setup}
 library(tidyverse, quietly = TRUE)
 library(lubridate)
 ```
@@ -19,7 +19,7 @@ From the summary above, it seems like there are many missing customer ID's. We c
 ## Investigate Abnormal Data
 
 ```{r}
-head(filter(prev_month_data, Price <= 0))
+head(filter(data, Price <= 0))
 
 (filter(data, Price <= 0))
 ```
@@ -92,8 +92,8 @@ There's an abnormally small number of sales on Saturdays. Because their customer
 ```{r Plotting Revenue Share}
 lastest_date <- filtered_data$InvoiceDate %>% unique() %>% .[order(., decreasing = TRUE)] %>% .[[2]]
 
-prev_month_data <- filtered_data %>% filter(year(InvoiceDate) == year(last_date),
-                                   month(InvoiceDate) == month(last_date - dmonths(1)))
+prev_month_data <- filtered_data %>% filter(year(InvoiceDate) == year(lastest_date),
+                                   month(InvoiceDate) == month(lastest_date - dmonths(1)))
 
 prev_month_data <- prev_month_data %>% mutate(revenue = Quantity * Price)
 
@@ -111,11 +111,100 @@ ggplot(data = prev_month_data, aes(x = StockCode, fill = `Customer ID`)) +
        legend = "Prodduct")
 ```
 
-```{r Plot Average Monthly Sale Price by Volume}
+```{r Weighted Average Monthly Sale Price by Volume}
 
 monthly_data <- filtered_data %>% mutate(month = months(InvoiceDate), year = year(InvoiceDate))
 
 monthly_summary <- monthly_data %>% group_by(month) %>% summarise(weighted_average = weighted.mean(Price, w = Quantity))
 
+monthly_summary$month <- factor(monthly_summary$month,
+                                levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+                                ordered = TRUE)
+
+ggplot(data = monthly_summary, aes(x = month)) +
+  geom_bar(aes(weight = weighted_average)) +
+  labs(title = "Weighted Average of Monthly Sale Price",
+       x = "Month",
+       y = "Average Price weighted by Quantity")
+
 ```
+
+From this we can see that there's some seasonal trends in the data. It slowly climbs to a peak in January-July and in August-December. The peak in December is likely caused by a higher demand in gift-ware during Christmas. Because the store sells Christmas decorations, this will also contribute.
+
+# 4a)
+
+## Linear Regression
+
+Create a linear model using the price, quantity, and timestamps within the data. The response variable of interest would be Total Revenue, calculated through $Price \times Quantity$. Revenue could then be aggregated over each month, and both the month and year could be used as explanatory variables. 
+
+It would be important to convey the uncertainty of the prediction through confidence intervals.
+
+To evaluate model predictions, I would use cross-validation to get an unbiased estimate of the error. 
+
+### The metrics which will be of interest include:
+* Price
+* Quantity
+* Timestamps
+
+## ARIMA Model
+Because the intention is to forecast this months revenue, and because we have timeseries data, an ARIMA model would also be suitable here. s, and should be fairly reliable for forecasting only one one month ahead, so long as there are no significant events which would throw off the trend. 
+
+Similarly to above, I would aggregate the total revenue monthly and use this as the data that's fed into the ARIMA model.
+
+While experimenting with different models in the ARIMA family, I would also investigate integrating a seasonal component through a SARIMA model as there is likely seasonality in this kind of data (higher sales during certain periods), as commented on previously.
+
+### The metrics which will be of interest include:
+* Price
+* Quantity
+* Timestamps
+
+## Uncertainties to explore:
+For each of the above models, the below uncertainties would need to be taken into account:
+
+* What plans the retailer has for discounts during the Christmas period, and if this is different from previous years
+
+* What new items are being sold on the store? Will any be in particularly high demand for Christmas?
+
+And generally, it will be worth asking the retailer if they're making any changes to how they're running the business in the coming month (new website, new membership program, etc.). Past data wont give a great forecast if it isn't representative of what's happening this month.
+
+## Other Models
+
+Given more time, I would do a literature review and investigate what models are explored in "Forecasting: Principles and Practice" by Rob J Hyndman and George Athanasopoulos. The text is openly available <https://otexts.com/fpp2/>
+[link](here) and is a great resource to help interpret and utilise timeseries data.
+
+## b)
+
+Of the two models above, I would reccomend the ARIMA model as the best approach. It takes advantage of the timeseries nature of the data and, while more complex than the linear model approach, is not overly complex for the increase in accuracy it would provide (like something to the tune of a neural network). The methodology is well established, and there are existing libraries in R (namely <https://www.rdocumentation.org/packages/forecast/versions/8.12> [link](forecast)) to support the development of this kind of model.
+
+## c)
+
+For this I'm going to choose to go with the ARIMA model. Largely, this is because it provides some quick functionality for comparing the historical data to the prediction. If given more time, I would choose to compare a handful of researched methods and compare them, or would ask for advice from peers, since I have limited experience in the area.
+
+```{r}
+library(forecast)
+
+revenueTS <- monthly_data %>% mutate(Revenue = Price*Quantity, date = floor_date(as.Date(InvoiceDate), "month")) %>% 
+  group_by(date) %>% summarise(total_revenue = sum(Revenue)) %>% arrange(date)
+
+# Remove the current days we have from that month
+revenueTS <- revenueTS %>% filter(date < "2011-12-01")
+
+revenueTS <- revenueTS %>% select(total_revenue) %>% ts(start = c(2009, 12), end = c(2011, 11),deltat = 1/12)
+
+model <- auto.arima(revenueTS, lambda = "auto")
+
+model %>% forecast(h = 1) %>% autoplot()
+```
+
+The model above shows the prediction for the total amount of revenue earnt during December of 2011, along with confidence intervals. The darker confidence interval is an 80% confidence interval, and the lighter band is a 95% confidence interval.
+
+I'm confident in the forecast, however this is more due to the large uncertainty in the prediction, rather than how robust my method was.
+
+Given more time it could be worth exploring daily/weekly summaries of the data, as the monthly data here is clearly too little to give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
+
+As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325; so around £140,000. Of course, whether or not he could buy the ferrari entirely depends what proportion of the money he would reinvest into his business, and how much he gets to take to the bank. Regardless, spending £140,000 based on an analysis I did in 30 minutes seems ill-advised. I would not reccomend it.
+
+
+
+
 
