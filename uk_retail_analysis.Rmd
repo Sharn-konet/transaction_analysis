@@ -1,44 +1,77 @@
 ---
 title: "Online Retail Analysis"
 author: "Sharn-konet Reitsma"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
-```{r setup}
-library(tidyverse, quietly = TRUE)
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+library(tidyverse)
 library(lubridate)
 ```
 
+# [Task One] Loading the Data
 
-```{r Import Data}
+```{r Import Data, warning = FALSE, message = FALSE}
 data <- read_csv("online_retail_II.csv")
 summary(data)
 ```
 
-From the summary above, it seems like there are many missing customer ID's. We can also see that there is at least one negative price and quantity in the data, which is not immediately interpretable.
+From the summary above, we see:
 
-## Investigate Abnormal Data
+* Negative Prices
+* Negative Quantities
+* Missing Data (NA's)
 
-```{r}
-head(filter(data, Price <= 0))
+It's hard to interpret what this data means. From this, it's clear that we need to look at the data quality.
 
-(filter(data, Price <= 0))
+----
+
+# [Task Three] Handling Returns and Data Cleaning
+
+[^1]: Task Three has been integrated into my data cleaning, as this is where I originally dealt with the returned items and due to the effects on task two. 
+
+In this section I will investigate the anomalous data identified in the summary above. First I'll be looking into the data for which there are negative quantities.[^1]
+
+```{r, results='hide'}
+data %>% filter(Quantity <= 0)
 ```
 
-Investigating through the data it seems like most of the occurences where price is low is due to damages.
-
-```{r}
-(filter(data, Price < 0))
-```
-
-It seems like the data which is less than zero is simply there to adjust for bad debt. This seems largely unrelated to revenues, and due to the large numbers, they may influence any statistics we generate about the data.
-
-```{r}
-(filter(data, Quantity <= 0))
+```{r, echo = FALSE}
+knitr::kable(head(data %>% filter(Quantity <= 0) %>% select(-c(StockCode, Country, InvoiceDate))))
 ```
 
 It seems like there are a large amount of quantities which are negative. From the context for the CSV, these are cancelled transactions indicated by the "C" in the invoice. If not removed, these cancelled transactions will count as revenue as they have a positive price associated with them. Further investigation shows that these invoice codes have no regular counter part (ie. no double-counting is occuring), we can just safely remove all of the cancelled invoice codes.
 
-There are also some observations in the quantities which are damaged or discoloured which are given negative quantities. These observations all have no price and no customer ID.
+Along with these are some observations of returns, negative quantities with no "C". Because some objects may be purchased before the data collection period, we want to remove their corresponding returns. We could do this by searching for matches of particular quantity, customer ID, and stock code, however, because I'm limited on time, and because this is a very small portion of the data set, **I am going to remove these returns instead**.
+
+## Investigating Other Anomalous Data
+
+Next I investigate what observations are strictly below zero.
+
+```{r, results='hide'}
+data %>% filter(Price < 0)
+```
+
+```{r, echo = FALSE}
+knitr::kable(head(data %>% filter(Price < 0) %>% select(-c(StockCode, Country, InvoiceDate))))
+```
+
+Data which is less than zero is there to adjust for bad debt. It's unrelated to revenue and, due to the large numbers, may influence any statistics we generate about the data. As such I will remove these observations from the dataset.
+
+Next we will check on the missing Customer ID data.
+
+```{r, results='hide'}
+data %>% filter(is.na(`Customer ID`), Quantity > 0)
+```
+
+\newpage
+
+```{r, echo = FALSE}
+knitr::kable(head(data %>% filter(is.na(`Customer ID`) , Quantity > 0) %>% select(-c(StockCode, Country, InvoiceDate))))
+```
+
+It seems as though this data is still useful, it should only be filtered out if we explicitly need to use the customer ID in our analysis.
 
 ## Clean Data
 
@@ -52,33 +85,29 @@ cancelled_invoices <- cancelled_invoices$Invoice %>% unique()
 
 filtered_data <- data %>% filter(!(Invoice %in% cancelled_invoices))
 
+# Remove all returns
+filtered_data <- filtered_data %>% filter(Quantity > 0)
+
 # Remove invoices with negative pricing
 filtered_data <- filtered_data %>% filter(Price > 0)
 
 ```
 
-For removing columns with NAs in customer ID, I wanted to make sure that these occur in tandem. Executing the following code gave the same results, so meaning they're likely just errors and are safe to remove.
+----
 
-```{r}
-# Both result in the same dataframe
-filtered_data <- filtered_data %>% filter(!is.na(`Customer ID`), !is.na(Description))
+# [Task Two] Plotting the Data
 
-filtered_data <- filtered_data %>% filter(!is.na(`Customer ID`) & !is.na(Description))
-```
+Before modelling the data, it's a good idea to do some exploratory analysis and investigate what relationships lie in the data.
 
-### Check summary of the data
-
-```{r}
-summary(filtered_data)
-```
-
-
-## Plotting the Data
+## Plotting Sales Volumes
 
 ```{r Plotting Sales Volumes}
 filtered_data <- filtered_data %>% mutate(dow = weekdays(InvoiceDate))
 
-filtered_data$dow <- factor(filtered_data$dow, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ordered = TRUE)
+filtered_data$dow <- factor(filtered_data$dow,
+                            levels = c("Monday", "Tuesday", "Wednesday",
+                                       "Thursday", "Friday", "Saturday", "Sunday"),
+                            ordered = TRUE)
 
 ggplot(data = filtered_data, aes(x = dow)) +
   geom_bar(aes(weight = Quantity)) + 
@@ -87,38 +116,78 @@ ggplot(data = filtered_data, aes(x = dow)) +
        y = "Quantity Sold")
 ```
 
-There's an abnormally small number of sales on Saturdays. Because their customers are mostly wholesalers, there is likely a reduced number of customers toward the weekend which we can see in the Sunday total. It's likely that the abnormally low number of sales is due to the store being closed on Saturday, but should be confirmed.
+There's an abnormally small number of sales on Saturdays. Because their customers are mostly wholesalers, there is likely a reduced number of customers toward the weekend which we can see in the Friday and Sunday total. This also means that it's likely the low number of sales on Saturday is due to the store being closed. This should be confirmed with the owner.
 
-```{r Plotting Revenue Share}
-lastest_date <- filtered_data$InvoiceDate %>% unique() %>% .[order(., decreasing = TRUE)] %>% .[[2]]
+## Plotting Revenue Share
+
+Unfortunately, I was not able to finish this plot. Given more time, I would have used the top 10 customer IDs and products to limit the number of groupings there were in the plot. I have however summarised the data, which conveys much of the same information as the plot would have.
+
+```{r Plotting Revenue Share, results = 'hide', message = FALSE}
+lastest_date <- filtered_data$InvoiceDate %>%
+  unique() %>%
+  .[order(., decreasing = TRUE)] %>%
+  .[[2]]
 
 prev_month_data <- filtered_data %>% filter(year(InvoiceDate) == year(lastest_date),
                                    month(InvoiceDate) == month(lastest_date - dmonths(1)))
 
 prev_month_data <- prev_month_data %>% mutate(revenue = Quantity * Price)
 
-prev_month_summ <- prev_month_data %>% group_by(`Customer ID`) %>% summarise(total_rev = sum(revenue)) %>% arrange(desc(total_rev))
+# Grab the top 10 customers
+customer_id_summ <- prev_month_data %>%
+  group_by(`Customer ID`) %>%
+  summarise(total_rev = sum(revenue)) %>% 
+  arrange(desc(total_rev)) %>% head(11)
 
-prev_month_data$`Customer ID` <- as.factor(prev_month_data$`Customer ID`)
-prev_month_data$StockCode <- as.factor(prev_month_data$StockCode)
+top_10_customers <- customer_id_summ$`Customer ID`[2:11]
 
-ggplot(data = prev_month_data, aes(x = StockCode, fill = `Customer ID`)) + 
-  geom_bar(aes(weight = Price)) + 
-  # facet_wrap(~`Customer ID`) + 
-  labs(title = "Last Month's Revenue by Product and Customer",
-       x = "Product",
-       y = "Total Revenue (£)",
-       legend = "Prodduct")
+stock_code_summ <- prev_month_data %>%
+  group_by(`StockCode`) %>%
+  summarise(total_rev = sum(revenue)) %>%
+  arrange(desc(total_rev)) %>% head(10)
+
+top_10_products <- stock_code_summ$StockCode
+
+#
+# Set all labels except for the top 10 of customer ID and Stock code to "Other"
+#
+
+# Plot, given the correctly labelled data:
+
+# ggplot(data = prev_month_data, aes(x = StockCode, fill = `Customer ID`)) + 
+#   geom_bar(aes(weight = Price)) + 
+#   labs(title = "Last Month's Revenue by Product and Customer",
+#        x = "Product",
+#        y = "Total Revenue (£)",
+#        legend = "Prodduct")
 ```
 
-```{r Weighted Average Monthly Sale Price by Volume}
+```{r, echo = FALSE}
+knitr::kable(customer_id_summ[2:11, ], 
+             caption = "Top 10 Customers by Revenue",
+             col.names = c("Customer", "Total Revenue"))
 
-monthly_data <- filtered_data %>% mutate(month = months(InvoiceDate), year = year(InvoiceDate))
+knitr::kable(stock_code_summ, 
+             caption = "Top 10 Products Sold by Revenue",
+             col.names = c("Product", "Total Revenue"))
+```
 
-monthly_summary <- monthly_data %>% group_by(month) %>% summarise(weighted_average = weighted.mean(Price, w = Quantity))
+## Plotting Average Price Weighted by Quantity Sold
+
+```{r Weighted Average Monthly Sale Price by Volume, message = FALSE}
+
+monthly_data <- filtered_data %>% mutate(month = months(InvoiceDate, abbreviate = TRUE),
+                                         year = year(InvoiceDate))
+
+monthly_summary <- monthly_data %>%
+  group_by(month) %>%
+  summarise(weighted_average = weighted.mean(Price, w = Quantity))
 
 monthly_summary$month <- factor(monthly_summary$month,
-                                levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+                                levels = c("Jan", "Feb", "Mar",
+                                           "Apr", "May", "Jun",
+                                           "Jul", "Aug", "Sep",
+                                           "Oct", "Nov", "Dec"),
                                 ordered = TRUE)
 
 ggplot(data = monthly_summary, aes(x = month)) +
@@ -129,9 +198,11 @@ ggplot(data = monthly_summary, aes(x = month)) +
 
 ```
 
-From this we can see that there's some seasonal trends in the data. It slowly climbs to a peak in January-July and in August-December. The peak in December is likely caused by a higher demand in gift-ware during Christmas. Because the store sells Christmas decorations, this will also contribute.
+From this we can see that there's some seasonal trends in the data. It slowly climbs to a peak in January-July and in August-December. The peak in December is likely caused by a higher demand in gift-ware during Christmas, especially because the store sells Christmas decorations. I'm unsure what the July peak is caused by, it might be worth asking a subject matter expert, such as the owner, who might have more intuition.
 
-# 4a)
+----
+
+# [Task Four] Predicting Monthly Revenue
 
 ## Linear Regression
 
@@ -172,24 +243,30 @@ And generally, it will be worth asking the retailer if they're making any change
 Given more time, I would do a literature review and investigate what models are explored in "Forecasting: Principles and Practice" by Rob J Hyndman and George Athanasopoulos. The text is openly available <https://otexts.com/fpp2/>
 [link](here) and is a great resource to help interpret and utilise timeseries data.
 
-## b)
+## [4b] Best Approach
 
-Of the two models above, I would reccomend the ARIMA model as the best approach. It takes advantage of the timeseries nature of the data and, while more complex than the linear model approach, is not overly complex for the increase in accuracy it would provide (like something to the tune of a neural network). The methodology is well established, and there are existing libraries in R (namely <https://www.rdocumentation.org/packages/forecast/versions/8.12> [link](forecast)) to support the development of this kind of model.
+Of the two models above, I would reccomend the ARIMA model as the best approach. It takes advantage of the timeseries nature of the data and, while more complex than the linear model approach, is not overly complex for the increase in accuracy it would provide (like something to the tune of a neural network). The methodology is well established, and there are existing libraries in R (namely <**forecast**> [link](https://www.rdocumentation.org/packages/forecast/versions/8.12) ) to support the development of this kind of model.
 
-## c)
+## [4c] Implementation of Chosent Solution
 
 For this I'm going to choose to go with the ARIMA model. Largely, this is because it provides some quick functionality for comparing the historical data to the prediction. If given more time, I would choose to compare a handful of researched methods and compare them, or would ask for advice from peers, since I have limited experience in the area.
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 library(forecast)
 
-revenueTS <- monthly_data %>% mutate(Revenue = Price*Quantity, date = floor_date(as.Date(InvoiceDate), "month")) %>% 
-  group_by(date) %>% summarise(total_revenue = sum(Revenue)) %>% arrange(date)
+revenueTS <- monthly_data %>% 
+  mutate(Revenue = Price*Quantity,
+         date = floor_date(as.Date(InvoiceDate), "month")) %>%
+  group_by(date) %>% 
+  summarise(total_revenue = sum(Revenue)) %>% 
+  arrange(date)
 
 # Remove the current days we have from that month
 revenueTS <- revenueTS %>% filter(date < "2011-12-01")
 
-revenueTS <- revenueTS %>% select(total_revenue) %>% ts(start = c(2009, 12), end = c(2011, 11),deltat = 1/12)
+revenueTS <- revenueTS %>% select(total_revenue) %>% ts(start = c(2009, 12),
+                                                        end = c(2011, 11),
+                                                        deltat = 1/12)
 
 model <- auto.arima(revenueTS, lambda = "auto")
 
@@ -200,7 +277,7 @@ The model above shows the prediction for the total amount of revenue earnt durin
 
 I'm confident in the forecast, however this is more due to the large uncertainty in the prediction, rather than how robust my method was.
 
-Given more time it could be worth exploring daily/weekly summaries of the data, as the monthly data here is clearly too little to give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
+Given more time I would do a more thorough analysis where I look into autocorrelations and am more involved in the modelling process. I would look into exploring daily/weekly summaries of the data, as the monthly data here is quite limiting and does not give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
 
 As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325; so around £140,000. Of course, whether or not he could buy the ferrari entirely depends what proportion of the money he would reinvest into his business, and how much he gets to take to the bank. Regardless, spending £140,000 based on an analysis I did in 30 minutes seems ill-advised. I would not reccomend it.
 
