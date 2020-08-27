@@ -4,6 +4,7 @@ author: "Sharn-konet Reitsma"
 output:
   pdf_document: default
   html_notebook: default
+urlcolor: blue
 ---
 ```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
 library(tidyverse)
@@ -23,13 +24,13 @@ From the summary above, we see:
 * Negative Quantities
 * Missing Data (NA's)
 
-It's hard to interpret what this data means. From this, it's clear that we need to look at the data quality.
+It's hard to interpret what these points of data mean, and if they need to be altered before performing analysis. From this, it's clear that we need to look at the data quality.
 
 ----
 
 # [Task Three] Handling Returns and Data Cleaning
 
-[^1]: Task Three has been integrated into my data cleaning, as this is where I originally dealt with the returned items and due to the effects on task two. 
+[^1]: Task Three has been integrated into my data cleaning, as this is where I originally dealt with the returned items and because it would effect the analysis in Task Two. 
 
 In this section I will investigate the anomalous data identified in the summary above. First I'll be looking into the data for which there are negative quantities.[^1]
 
@@ -38,12 +39,13 @@ data %>% filter(Quantity <= 0)
 ```
 
 ```{r, echo = FALSE}
-knitr::kable(head(data %>% filter(Quantity <= 0) %>% select(-c(StockCode, Country, InvoiceDate))))
+knitr::kable(head(data %>% filter(Quantity <= 0) %>% select(-c(StockCode, Country, InvoiceDate))),
+             caption = "Head of the Filtered Quantity Data (22,950 rows)")
 ```
 
-It seems like there are a large amount of quantities which are negative. From the context for the CSV, these are cancelled transactions indicated by the "C" in the invoice. If not removed, these cancelled transactions will count as revenue as they have a positive price associated with them. Further investigation shows that these invoice codes have no regular counter part (ie. no double-counting is occuring), we can just safely remove all of the cancelled invoice codes.
+It seems like there are a large amount of quantities which are negative. From the context for the CSV, these are cancelled transactions indicated by the "C" in the invoice. If not removed, these cancelled transactions will count as revenue as they have a positive price associated with them. Further investigation shows that these invoice codes have no regular counter part (ie. no double-counting is occuring), so we can just safely remove all of the cancelled invoice codes.
 
-Along with these are some observations of returns, negative quantities with no "C". Because some objects may be purchased before the data collection period, we want to remove their corresponding returns. We could do this by searching for matches of particular quantity, customer ID, and stock code, however, because I'm limited on time, and because this is a very small portion of the data set, **I am going to remove these returns instead**.
+Along with these are some observations of returns, negative quantities with no "C". Because some objects may be purchased before the data collection period, we want to remove their corresponding returns. We could do this by searching for matches of particular quantity, customer ID, and stock code, however, because I'm limited on time, and because this is a very small portion of the data set (6,000 observations), **I am going to remove these returns instead**.
 
 ## Investigating Other Anomalous Data
 
@@ -54,7 +56,8 @@ data %>% filter(Price < 0)
 ```
 
 ```{r, echo = FALSE}
-knitr::kable(head(data %>% filter(Price < 0) %>% select(-c(StockCode, Country, InvoiceDate))))
+knitr::kable(head(data %>% filter(Price < 0) %>% select(-c(StockCode, Country, InvoiceDate))),
+             caption = "Negative Price Data (5 rows)")
 ```
 
 Data which is less than zero is there to adjust for bad debt. It's unrelated to revenue and, due to the large numbers, may influence any statistics we generate about the data. As such I will remove these observations from the dataset.
@@ -65,17 +68,16 @@ Next we will check on the missing Customer ID data.
 data %>% filter(is.na(`Customer ID`), Quantity > 0)
 ```
 
-\newpage
-
 ```{r, echo = FALSE}
-knitr::kable(head(data %>% filter(is.na(`Customer ID`) , Quantity > 0) %>% select(-c(StockCode, Country, InvoiceDate))))
+knitr::kable(head(data %>% filter(is.na(`Customer ID`) , Quantity > 0) %>% select(-c(StockCode, Country, InvoiceDate))),
+             caption = "Head of Missing Customer ID Observations (238,801 rows)")
 ```
 
 It seems as though this data is still useful, it should only be filtered out if we explicitly need to use the customer ID in our analysis.
 
 ## Clean Data
 
-From the above investigation, it's clear that some of the data needs to be removed before we can summarise and visualise the data.
+From the above investigation, it's clear that some of the data needs to be removed before we can summarise and visualise the data. The code below filters out all of the troublesome observations identified previously.
 
 ```{r Clean Data}
 
@@ -93,7 +95,7 @@ filtered_data <- filtered_data %>% filter(Price > 0)
 
 ```
 
-----
+
 
 # [Task Two] Plotting the Data
 
@@ -116,7 +118,7 @@ ggplot(data = filtered_data, aes(x = dow)) +
        y = "Quantity Sold")
 ```
 
-There's an abnormally small number of sales on Saturdays. Because their customers are mostly wholesalers, there is likely a reduced number of customers toward the weekend which we can see in the Friday and Sunday total. This also means that it's likely the low number of sales on Saturday is due to the store being closed. This should be confirmed with the owner.
+There's an abnormally small number of sales on Saturdays. Because their customers are mostly wholesalers, we also see a reduced number of customers toward the weekend which we can see in the Friday and Sunday total. Because of this, it's likely the low number of sales on Saturday is due to the store being closed, but this should be confirmed with the owner.
 
 ## Plotting Revenue Share
 
@@ -204,13 +206,13 @@ From this we can see that there's some seasonal trends in the data. It slowly cl
 
 # [Task Four] Predicting Monthly Revenue
 
+To forecast next month's revenue I will consider the following models. For all of the models, it will be important to convey the uncertainty in our estimate to the owner.
+
 ## Linear Regression
 
-Create a linear model using the price, quantity, and timestamps within the data. The response variable of interest would be Total Revenue, calculated through $Price \times Quantity$. Revenue could then be aggregated over each month, and both the month and year could be used as explanatory variables. 
+Create a linear model using the price, quantity, and timestamps within the data. The response variable of interest would be Total Revenue, calculated through $Price \times Quantity$. Revenue could then be aggregated over each month, and both the month and year could be used as explanatory variables. This means it would be a rather simple model, and wont require hundreds of variables (like if customer ID was a explanatory variable).
 
-It would be important to convey the uncertainty of the prediction through confidence intervals.
-
-To evaluate model predictions, I would use cross-validation to get an unbiased estimate of the error. 
+Uncertainty of the prediction can be very easily conveyed through confidence intervals.
 
 ### The metrics which will be of interest include:
 * Price
@@ -218,11 +220,11 @@ To evaluate model predictions, I would use cross-validation to get an unbiased e
 * Timestamps
 
 ## ARIMA Model
-Because the intention is to forecast this months revenue, and because we have timeseries data, an ARIMA model would also be suitable here. s, and should be fairly reliable for forecasting only one one month ahead, so long as there are no significant events which would throw off the trend. 
+Because the intention is to forecast this months revenue, and because we have timeseries data, an ARIMA model would also be suitable here. An ARIMA model should be fairly reliable for forecasting only one one month ahead, however, there might be wide confidence intervals due to only having two years of data. 
 
 Similarly to above, I would aggregate the total revenue monthly and use this as the data that's fed into the ARIMA model.
 
-While experimenting with different models in the ARIMA family, I would also investigate integrating a seasonal component through a SARIMA model as there is likely seasonality in this kind of data (higher sales during certain periods), as commented on previously.
+While experimenting with different models in the ARIMA family, I would also investigate integrating a seasonal component through a SARIMA model. Seasonality is common in financial data (higher sales during certain periods), and is clearly present in this data, as shown in the "Weighted Average of Monthly Sale Price" plot above.
 
 ### The metrics which will be of interest include:
 * Price
@@ -234,22 +236,22 @@ For each of the above models, the below uncertainties would need to be taken int
 
 * What plans the retailer has for discounts during the Christmas period, and if this is different from previous years
 
-* What new items are being sold on the store? Will any be in particularly high demand for Christmas?
+* Are new items being sold in the store? How might this effect sales?
 
 And generally, it will be worth asking the retailer if they're making any changes to how they're running the business in the coming month (new website, new membership program, etc.). Past data wont give a great forecast if it isn't representative of what's happening this month.
 
 ## Other Models
 
-Given more time, I would do a literature review and investigate what models are explored in "Forecasting: Principles and Practice" by Rob J Hyndman and George Athanasopoulos. The text is openly available <https://otexts.com/fpp2/>
-[link](here) and is a great resource to help interpret and utilise timeseries data.
+Given more time, I would do a literature review and investigate what models are explored in "Forecasting: Principles and Practice" by Rob J Hyndman and George Athanasopoulos. The text is openly available
+[here](https://otexts.com/fpp2/) and is a great resource to help interpret and utilise timeseries data.
 
 ## [4b] Best Approach
 
-Of the two models above, I would reccomend the ARIMA model as the best approach. It takes advantage of the timeseries nature of the data and, while more complex than the linear model approach, is not overly complex for the increase in accuracy it would provide (like something to the tune of a neural network). The methodology is well established, and there are existing libraries in R (namely <**forecast**> [link](https://www.rdocumentation.org/packages/forecast/versions/8.12) ) to support the development of this kind of model.
+Of the two models above, I would reccomend the ARIMA model as the best approach. It' takes advantage of the timeseries nature of the data's more natural for this kind of data and, while more complex than the linear model approach, is not overly complex for the increase in accuracy it may provide. The methodology is well established, and there are existing libraries in R (namely [forecast](https://www.rdocumentation.org/packages/forecast/versions/8.12)) which make the implementation straight forward and quick.
 
 ## [4c] Implementation of Chosent Solution
 
-For this I'm going to choose to go with the ARIMA model. Largely, this is because it provides some quick functionality for comparing the historical data to the prediction. If given more time, I would choose to compare a handful of researched methods and compare them, or would ask for advice from peers, since I have limited experience in the area.
+For my implementation I'm using an ARIMA model. Largely, this is because it provides some quick functionality for comparing the historical data to the prediction. If given more time, I would choose to compare a few methods I've researched and compare them. Or, I would ask for advice from peers, since I have limited experience in the area.
 
 ```{r, message = FALSE, warning = FALSE}
 library(forecast)
@@ -273,13 +275,13 @@ model <- auto.arima(revenueTS, lambda = "auto")
 model %>% forecast(h = 1) %>% autoplot()
 ```
 
-The model above shows the prediction for the total amount of revenue earnt during December of 2011, along with confidence intervals. The darker confidence interval is an 80% confidence interval, and the lighter band is a 95% confidence interval.
+The model above shows the prediction for the total amount of revenue earnt during December of 2011, along with confidence intervals. The darker band is an 80% confidence interval, and the lighter band is a 95% confidence interval.
 
-I'm confident in the forecast, however this is more due to the large uncertainty in the prediction, rather than how robust my method was.
+I'm confident in the forecast, however, I do think there's a significant amount of uncertainty associated with it due to a lack of past data. It seems inline with the trend, I'd expect the data to take. Although admittedly, I do not see the spike in June which was apparent from the "Weighted Mean Plot" so it might be worth investigating this given more time.
 
-Given more time I would do a more thorough analysis where I look into autocorrelations and am more involved in the modelling process. I would look into exploring daily/weekly summaries of the data, as the monthly data here is quite limiting and does not give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
+Given more time I would do a more thorough analysis where I'm more involved in the modelling process. I would look into exploring daily/weekly summaries of the data, as the monthly data here is quite limiting and does not give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
 
-As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325; so around £140,000. Of course, whether or not he could buy the ferrari entirely depends what proportion of the money he would reinvest into his business, and how much he gets to take to the bank. Regardless, spending £140,000 based on an analysis I did in 30 minutes seems ill-advised. I would not reccomend it.
+As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325 USD; which is around £140,000! Even if he can afford it (which it seems like he can) I would not reccomend spending this much money on a Christmas present.
 
 
 
