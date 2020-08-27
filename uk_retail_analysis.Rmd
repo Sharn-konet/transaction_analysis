@@ -21,6 +21,7 @@ summary(data)
 From the summary above, we see:
 
 * Negative Prices
+* Large Prices
 * Negative Quantities
 * Missing Data (NA's)
 
@@ -61,6 +62,28 @@ knitr::kable(head(data %>% filter(Price < 0) %>% select(-c(StockCode, Country, I
 ```
 
 Data which is less than zero is there to adjust for bad debt. It's unrelated to revenue and, due to the large numbers, may influence any statistics we generate about the data. As such I will remove these observations from the dataset.
+
+Next it'll be worth looking into the large values for price
+
+```{r, results='hide'}
+data %>% arrange(desc(Price)) %>% head()
+```
+
+
+```{r, echo = FALSE}
+knitr::kable(head(data %>% arrange(desc(Price))) %>% select(-c(StockCode, Country, InvoiceDate)),
+             caption = "Observations with Largest Prices")
+```
+
+Seems like there are many observations in the data which may not be related to actual purchases in the store. For the purposes of this analysis I'll leave these in, as it would take a significant amount of effort to remove them, but given more time I would ask for clarification about observations labelled: 
+
+* Manual
+* AMAZON FEE
+* Bank Charges
+* DOTCOM Postage
+* Adjust Bad Debt
+
+As they seem like they should not be used in calculations of revenue.
 
 Next we will check on the missing Customer ID data.
 
@@ -122,7 +145,7 @@ There's an abnormally small number of sales on Saturdays. Because their customer
 
 ## Plotting Revenue Share
 
-Unfortunately, I was not able to finish this plot. Given more time, I would have used the top 10 customer IDs and products to limit the number of groupings there were in the plot. I have however summarised the data, which conveys much of the same information as the plot would have.
+Unfortunately, I was not able to finish this plot. Given more time, I would have used the top 10 customer IDs and products to limit the number of groupings there were in the plot. I have however summarised the data, which conveys much of the same information that the plot would have.
 
 ```{r Plotting Revenue Share, results = 'hide', message = FALSE}
 lastest_date <- filtered_data$InvoiceDate %>%
@@ -163,7 +186,7 @@ top_10_products <- stock_code_summ$StockCode
 #        y = "Total Revenue (£)",
 #        legend = "Prodduct")
 ```
-
+\newpage
 ```{r, echo = FALSE}
 knitr::kable(customer_id_summ[2:11, ], 
              caption = "Top 10 Customers by Revenue",
@@ -200,7 +223,7 @@ ggplot(data = monthly_summary, aes(x = month)) +
 
 ```
 
-From this we can see that there's some seasonal trends in the data. It slowly climbs to a peak in January-July and in August-December. The peak in December is likely caused by a higher demand in gift-ware during Christmas, especially because the store sells Christmas decorations. I'm unsure what the July peak is caused by, it might be worth asking a subject matter expert, such as the owner, who might have more intuition.
+From this we can see that there's some seasonal trends in the data. It slowly climbs to a peak throughout January-June and in August-December. The peak in December is likely caused by a higher demand in gift-ware during Christmas, especially because the store sells Christmas decorations. I'm unsure what the July peak is caused by. It may be worth asking a subject matter expert, such as the owner, who might have more intuition.
 
 ----
 
@@ -224,7 +247,7 @@ Because the intention is to forecast this months revenue, and because we have ti
 
 Similarly to above, I would aggregate the total revenue monthly and use this as the data that's fed into the ARIMA model.
 
-While experimenting with different models in the ARIMA family, I would also investigate integrating a seasonal component through a SARIMA model. Seasonality is common in financial data (higher sales during certain periods), and is clearly present in this data, as shown in the "Weighted Average of Monthly Sale Price" plot above.
+While experimenting with different models in the ARIMA family, I would also investigate integrating a seasonal component through a SARIMA model. Seasonality is common in financial data (higher sales during certain periods), and is clearly present in this data, as shown in the Weighted Average plot above. To do this, however, we would need a larger backlog of data.
 
 ### The metrics which will be of interest include:
 * Price
@@ -277,11 +300,11 @@ model %>% forecast(h = 1) %>% autoplot()
 
 The model above shows the prediction for the total amount of revenue earnt during December of 2011, along with confidence intervals. The darker band is an 80% confidence interval, and the lighter band is a 95% confidence interval.
 
-I'm confident in the forecast, however, I do think there's a significant amount of uncertainty associated with it due to a lack of past data. It seems inline with the trend, I'd expect the data to take. Although admittedly, I do not see the spike in June which was apparent from the "Weighted Mean Plot" so it might be worth investigating this given more time.
+I'm not confident in the forecast due to the numerous "high price" observations I did not remove when cleaning the data. However, ignoring this, I think it's a fairly good estimate. There's a significant amount of uncertainty associated with it due to a lack of past data, but it seems inline with the trend I'd expect the data to take. Although admittedly, the spike in June is not present in this plot, but was apparent in the Weighted Average plot. It might be worth investigating this given more time.
 
 Given more time I would do a more thorough analysis where I'm more involved in the modelling process. I would look into exploring daily/weekly summaries of the data, as the monthly data here is quite limiting and does not give a good prediction of total revenue. It may also be worth exploring the results of linear regression and seeing how they compare to the estimate here.
 
-As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325 USD; which is around £140,000! Even if he can afford it (which it seems like he can) I would not reccomend spending this much money on a Christmas present.
+As to whether or not I would reccomend a new ferrari based on this forecast, that's a different matter altogether. In 2011, the conversion rate from stirling to USD was around £1 GBP = $1.6025 USD. Around then a new ferrari was about \$225,325 USD; which is around £140,000! Even if he can afford it (which it seems like he can) I would not reccomend spending this much money on a Ferrari.
 
 
 
